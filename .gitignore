@@ -1,0 +1,7 @@
+# Place data for non local DVC
+# /dataset
+__pycache__/
+.env
+images
+#for test
+python
