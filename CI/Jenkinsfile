@@ -36,6 +36,11 @@ pipeline {
 
             }
             }
+        stage('check env') {
+            steps {
+                sh 'echo ${pass} && echo ${token}'
+				}
+			}
         stage('Clone github repository') {
             steps {
                 cleanWs()
