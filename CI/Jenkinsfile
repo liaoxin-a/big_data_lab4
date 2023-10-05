@@ -1,0 +1,110 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKERHUB_CREDS=credentials('big_data')
+        MYSQL_ROOT_CREDS=credentials('mysql')
+        VAULT_TOKEN_CREDS=credentials('token')
+
+        ZOOKEEPER_CREDS=credentials('zookeeper_ip')
+        KAFKA_CREDS=credentials('kafka_ip')
+        TOPICS_CREDS=credentials('topics_ip')
+        CONSUMER_CREDS=credentials('consumer_ip')
+        NET_CREDS=credentials('ip_net')
+        LC_ALL = "en_US.UTF-8"
+        LANG    = "en_US.UTF-8"
+        LANGUAGE = "en_US.UTF-8"
+    }
+
+    options {
+            timestamps()
+            skipDefaultCheckout(true)
+        }
+    stages {
+        stage('export env') {
+        steps {
+            sh '''
+                export pass=$MYSQL_ROOT_CREDS_PSW 
+                export token=$VAULT_TOKEN_CREDS_PSW
+                export port_kafka='9092'
+                export zookeeper_ip =$ZOOKEEPER_CREDS_PSW 
+                export kafka_ip  =$KAFKA_CREDS_PSW 
+                export topics_ip =$TOPICS_CREDS_PSW 
+                export consumer_ip =$CONSUMER_CREDS_PSW 
+                export ip_net=$NET_CREDS_PSW 
+            '''
+
+            }
+            }
+        stage('Clone github repository') {
+            steps {
+                cleanWs()
+                sh 'git clone -b main https://github.com/liaoxin-a/big_data_lab4.git'
+				}
+			}
+
+        stage('Checkout repo dir') {
+            steps {
+                sh 'cd big_data_lab4 && ls'
+				}
+			}
+
+        
+ 
+        
+        stage('Login'){
+            steps{
+                sh 'docker login -u $DOCKERHUB_CREDS -p $DOCKERHUB_CREDS_PSW'
+                }
+            }
+
+        stage('Create and run docker container') {
+            steps {
+                // sh 'cd big_data_lab4 && docker-compose up'
+                script {
+                    try {
+                        sh 'cd big_data_lab4 && docker-compose build'
+                        }
+
+                    finally {
+                    sh '''
+                        cd big_data_lab4
+                        docker-compose up -d
+                        '''
+                        }
+				    }
+                }
+            }
+
+        // use for multi containers:
+        //docker exec %containerId% cd app && coverage run src/unit_tests/test_preprocess.py && coverage run -a src/unit_tests/test_training.py && coverage report -m
+        //use for single container (with auth):
+        //docker run --name big_data_web_1 cd app && coverage run src/unit_tests/test_preprocess.py && coverage run -a src/unit_tests/test_training.py && coverage report -m
+
+
+        stage('Checkout coverage report'){
+            steps{
+                dir("big_data_lab4"){
+                    sh '''
+                    docker-compose logs -t --tail 10
+                    '''
+                }
+            }
+        }
+
+        stage('Push'){
+            steps{
+                sh '''
+                    docker-compose push
+                    '''
+            }
+        }
+	}
+
+    post {
+        always {
+            sh 'docker logout'
+        }
+    }
+ 
+}
