@@ -1,0 +1,86 @@
+version: '3.9'
+services:
+  mysql:
+    build: ./mysql/
+    container_name: mysql_yt8m
+    restart: always
+    environment:
+      MYSQL_DATABASE: 'db'
+      MYSQL_ROOT_PASSWORD: ${pass}
+    image: liaox1/db_yt8m:1.0         
+    ports:
+      - '3306:3306'
+  
+  web:
+    build: .
+    container_name: c2_bigdata
+    environment:
+      HVAC_CLIENT: 'http://host.docker.internal:8200'
+      NAME_DATABASE: 'db'
+      HVAC_CLIENT_TOKEN: ${token}
+    command: bash -c "python src/train.py && python src/predict.py -m && coverage run src/unit_tests/test_preprocess.py && coverage run -a src/unit_tests/test_training.py && coverage report -m"
+    ports:
+      - 8000:8000
+    image: liaox1/big_data:4.0
+    depends_on:
+        - mysql
+    extra_hosts:
+        - 'host.docker.internal:host-gateway'
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.2
+    container_name: zookeeper
+    networks:
+      kafkanetwork:
+        ipv4_address: ${zookeeper_ip}
+    environment:
+        ZOOKEEPER_CLIENT_PORT: 2181        
+  kafka:
+    image: confluentinc/cp-kafka:7.3.2
+    container_name: kafka
+    networks:
+      kafkanetwork:
+        ipv4_address: ${kafka_ip}
+    ports:
+        - "${port_kafka}:${port_kafka}"
+    depends_on:
+        - zookeeper
+    environment:
+        KAFKA_BROKER_ID: 1
+        KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+        KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+        KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+        KAFKA_LISTENERS: INTERNAL://:${port_kafka}
+        KAFKA_ADVERTISED_LISTENERS: INTERNAL://${kafka_ip}:${port_kafka}
+        KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT
+          
+  kafka-topics-generator:
+    image: confluentinc/cp-kafka:7.3.2
+    container_name: kafka-topics-generator
+    networks:
+      kafkanetwork:
+        ipv4_address: ${topics_ip}
+    depends_on:
+        - kafka
+    command: >
+        bash -c
+          "sleep 5s &&
+          kafka-topics --create --topic=kafka-predictions --if-not-exists --bootstrap-server=${kafka_ip}:${port_kafka}"
+  kafka-consumer:
+    image: confluentinc/cp-kafka:7.3.2
+    networks:
+      kafkanetwork:
+        ipv4_address: ${consumer_ip}
+    container_name: kafka-consumer
+    command: >
+        bash -c
+          "kafka-console-consumer --bootstrap-server ${kafka_ip}:${port_kafka} --topic kafka-pred --from-beginning"
+
+  networks:
+    kafkanetwork:
+      driver: bridge
+      ipam:
+        config:
+          - subnet: ${ip_net}
+
+
